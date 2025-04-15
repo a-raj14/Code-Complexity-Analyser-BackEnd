@@ -22,7 +22,7 @@ type AnalyzeResponse struct {
 // WithCORS is a wrapper to add CORS headers
 func WithCORS(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
@@ -47,8 +47,28 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Language:", req.Language)
 	cleanCode := removeComments(req.Code)
 	
-	res := analyzeCode(cleanCode, req.Language)
+	// res := analyzeCode(cleanCode, req.Language) //earlier call was direclty using main thread.
+	timeChan := make(chan string)
+	spaceChan := make(chan string)
 
+	// Start goroutines
+	go func() {
+		timeChan <- analyzeTimeComplexity(cleanCode, req.Language)
+	}()
+
+	go func() {
+		spaceChan <- analyzeSpaceComplexity(cleanCode, req.Language)
+	}()
+
+	// Code will wait till we get result from it.
+	timeResult := <-timeChan
+	spaceResult := <-spaceChan
+
+	// Build response
+	res := AnalyzeResponse{
+		TimeComplexity:  timeResult,
+		SpaceComplexity: spaceResult,
+	}
 	// Respond with time and space complexity
 	json.NewEncoder(w).Encode(res)
 }
@@ -67,7 +87,8 @@ func removeComments(code string) string {
 }
 
 // analyzeCode analyzes the code based on the language
-func analyzeCode(code string, language string) AnalyzeResponse {
+func analyzeSpaceComplexity(code string, language string) string {
+	return "Space complexity is currently not available."
 	switch language {
 	case "cpp", "java", "csharp":
 		return analyzeCStyleCode(code)
@@ -76,11 +97,24 @@ func analyzeCode(code string, language string) AnalyzeResponse {
 	case "javascript", "golang":
 		return analyzeJsOrGoCode(code)
 	default:
-		return AnalyzeResponse{TimeComplexity: "Unknown", SpaceComplexity: "Unknown"}
+		return "Unknown"
 	}
 }
 
-func analyzeCStyleCode(code string) AnalyzeResponse {
+func analyzeTimeComplexity(code string, language string) string {
+	switch language {
+	case "cpp", "java", "csharp":
+		return analyzeCStyleCode(code)
+	case "python":
+		return analyzePythonCode(code)
+	case "javascript", "golang":
+		return analyzeJsOrGoCode(code)
+	default:
+		return "Unknown"
+	}
+}
+
+func analyzeCStyleCode(code string) string {
 	loopRegex := regexp.MustCompile(`(?m)for\s*\(|while\s*\(`)
 	loopCount := len(loopRegex.FindAllString(code, -1))
 
@@ -103,13 +137,10 @@ func analyzeCStyleCode(code string) AnalyzeResponse {
 		time = fmt.Sprintf("O(n^%d)", loopCount)
 	}
 
-	return AnalyzeResponse{
-		TimeComplexity:  time,
-		SpaceComplexity: "O(1)",
-	}
+	return time
 }
 
-func analyzePythonCode(code string) AnalyzeResponse {
+func analyzePythonCode(code string) string {
 	loopRegex := regexp.MustCompile(`(?m)for\s+\w+\s+in|while\s+`)
 	loopCount := len(loopRegex.FindAllString(code, -1))
 	recursive := strings.Contains(code, "def") && strings.Contains(code, "():")
@@ -123,13 +154,10 @@ func analyzePythonCode(code string) AnalyzeResponse {
 		time = fmt.Sprintf("O(n^%d)", loopCount)
 	}
 
-	return AnalyzeResponse{
-		TimeComplexity:  time,
-		SpaceComplexity: "O(1)",
-	}
+	return time
 }
 
-func analyzeJsOrGoCode(code string) AnalyzeResponse {
+func analyzeJsOrGoCode(code string) string {
 	loopRegex := regexp.MustCompile(`(?m)for\s*\(|while\s*\(`)
 	loopCount := len(loopRegex.FindAllString(code, -1))
 
@@ -140,8 +168,5 @@ func analyzeJsOrGoCode(code string) AnalyzeResponse {
 		time = fmt.Sprintf("O(n^%d)", loopCount)
 	}
 
-	return AnalyzeResponse{
-		TimeComplexity:  time,
-		SpaceComplexity: "O(1)",
-	}
+	return time
 }
